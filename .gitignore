@@ -2,3 +2,18 @@
 .Rhistory
 .RData
 .Ruserdata
+.DS_Store
+
+# LaTeX build products (keep source figures/*.pdf)
+hw1/hw1.pdf
+hw1/*.aux
+hw1/*.bbl
+hw1/*.bcf
+hw1/*.blg
+hw1/*.fdb_latexmk
+hw1/*.fls
+hw1/*.log
+hw1/*.out
+hw1/*.run.xml
+hw1/*.synctex.gz
+hw1/*.toc
