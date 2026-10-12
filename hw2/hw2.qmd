@@ -1,0 +1,110 @@
+---
+title: "Homework 2 — R Foundations and Quarto"
+author: "Junru Yao"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    embed-resources: true
+---
+
+## Part 1: Read and Inspect
+
+```{r}
+plots <- read.csv("plot_survey.csv", stringsAsFactors = FALSE)
+str(plots)
+```
+
+The data contain `r nrow(plots)` rows and `r ncol(plots)` columns. The `canopy` column has an unexpected character type: the text entry `not recorded` prevents R from recognizing the column as numeric.
+
+## Part 2: Clean It
+
+First, make the invalid canopy text an explicit missing value and convert the measurements to numeric. There are `r sum(plots$canopy == "not recorded")` such canopy entries to convert.
+
+```{r}
+canopy_missing <- plots$canopy == "not recorded"
+plots$canopy[canopy_missing] <- NA
+plots$canopy <- as.numeric(plots$canopy)
+```
+
+The biomass value `r -999` is a sentinel for an invalid measurement, not a real negative biomass, so I converted `r sum(plots$biomass == -999)` such values to missing values.
+
+```{r}
+biomass_sentinel <- plots$biomass == -999
+plots$biomass[biomass_sentinel] <- NA
+```
+
+`soil_ph` already uses `NA` for missing measurements. I kept those missing values as missing rather than imputing or dropping plots; `r sum(is.na(plots$soil_ph))` plots have missing soil pH.
+
+```{r}
+# Confirm the cleaned measurement types and missing-value counts.
+str(plots)
+colSums(is.na(plots))
+```
+
+## Part 3: Summarize
+
+The summaries below use the cleaned measurements. Base R's `na.rm = TRUE` excludes unavailable measurements from each calculation.
+
+```{r}
+biomass_mean <- mean(plots$biomass, na.rm = TRUE)
+biomass_sd <- sd(plots$biomass, na.rm = TRUE)
+canopy_mean <- mean(plots$canopy, na.rm = TRUE)
+canopy_sd <- sd(plots$canopy, na.rm = TRUE)
+
+site_counts <- table(plots$site)
+treatment_counts <- table(plots$treatment)
+biomass_by_site <- tapply(plots$biomass, plots$site, mean, na.rm = TRUE)
+missing_soil_ph <- sum(is.na(plots$soil_ph))
+
+biomass_mean
+biomass_sd
+canopy_mean
+canopy_sd
+site_counts
+treatment_counts
+biomass_by_site
+missing_soil_ph
+```
+
+After cleaning, mean biomass is `r round(biomass_mean, 2)` (SD `r round(biomass_sd, 2)`), and mean canopy cover is `r round(canopy_mean, 2)` (SD `r round(canopy_sd, 2)`). Site counts are: ridge `r site_counts[["ridge"]]`, riparian `r site_counts[["riparian"]]`, and valley `r site_counts[["valley"]]`; treatment counts are: control `r treatment_counts[["control"]]` and thinned `r treatment_counts[["thinned"]]`. Mean biomass by site is ridge `r round(biomass_by_site[["ridge"]], 2)`, riparian `r round(biomass_by_site[["riparian"]], 2)`, and valley `r round(biomass_by_site[["valley"]], 2)`. There are `r missing_soil_ph` plots with missing `soil_ph`.
+
+## Part 4: Answer a Question
+
+I used logical subsetting to compare thinned plots at riparian and ridge sites.
+
+```{r}
+thinned_riparian <- plots$biomass[
+  plots$treatment == "thinned" & plots$site == "riparian"
+]
+thinned_ridge <- plots$biomass[
+  plots$treatment == "thinned" & plots$site == "ridge"
+]
+
+mean_riparian_thinned <- mean(thinned_riparian, na.rm = TRUE)
+mean_ridge_thinned <- mean(thinned_ridge, na.rm = TRUE)
+difference <- mean_riparian_thinned - mean_ridge_thinned
+mean_riparian_thinned
+mean_ridge_thinned
+difference
+```
+
+Among thinned plots, mean biomass is `r if (difference > 0) "higher" else "not higher"` on riparian sites than on ridge sites by `r round(abs(difference), 2)` biomass units.
+
+## Part 5: Make One Figure
+
+```{r}
+#| fig-cap: "Biomass by canopy cover"
+#| fig-width: 7
+#| fig-height: 5
+plot(
+  plots$canopy,
+  plots$biomass,
+  xlab = "Canopy cover (%)",
+  ylab = "Biomass (recorded units; unit not specified)",
+  pch = 19,
+  col = "darkgreen"
+)
+```
+
+The figure shows the observed relationship between canopy cover and biomass for plots with both measurements recorded.
