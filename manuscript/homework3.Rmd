@@ -1,0 +1,47 @@
+---
+title: "STAT 5014 — Homework 3: Inheriting Someone Else's Analysis"
+author: "Junru Yao"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+set.seed(5014)
+source("../code/analysis.R")
+raw_records <- read.csv("../data/extracted_records.csv", stringsAsFactors = FALSE)
+cleaning <- clean_records(raw_records)
+records <- cleaning$data
+```
+
+## Part 1: Debugging and audit
+
+### Failure log
+
+1. I first ran the inherited script with `Rscript messy_analysis.R`. It could not find the input file because the script used a Windows-specific path. I changed the path to the project-relative location `data/extracted_records.csv`.
+
+2. After that change, `if (d$pulse > 100)` gave a warning because the condition contained many values. In this R version, the command checked only the first value. I replaced it with a filter that checks every nonmissing pulse.
+
+3. The script created `results.csv`, but the file had one generic column for six different statistics and did not identify each variable or statistic. I replaced it with a table that names each vital sign and statistic. The revised script writes results to `output/` and does not change the raw data.
+
+### Two errors that changed the results
+
+The script treated `-99` as a measured value. This produced impossible negative vital-sign values and inflated the standard deviations. The raw data contain 18 pulse codes and 12 codes for each blood-pressure measure. I changed these 42 cells to missing values; 82 records were changed in total, and all 200 records remain in the data.
+
+| Vital sign | Original mean | Correct mean | Original SD | Correct SD |
+|:--|--:|--:|--:|--:|
+| Pulse (beats/min) | 64.160 | 80.297 | 52.902 | 12.950 |
+| Systolic blood pressure (mmHg) | 117.170 | 130.968 | 57.017 | 16.416 |
+| Diastolic blood pressure (mmHg) | 63.060 | 73.404 | 42.298 | 10.536 |
+
+The clinic filter also required exact labels. It included 88 Clinic A records and 60 Clinic B records, leaving 52 records out. The labels used different capitalization and spacing. I checked `nrow()` after the filters; seeing 52 records left out led me to inspect the raw labels. The corrected groups contain 122 Clinic A records and 78 Clinic B records. After excluding missing pulse values, 109 and 73 records remain for the pulse comparison.
+
+### Difference in mean pulse
+
+The original script reported a Clinic B minus Clinic A difference of **16.075 beats/min**. It used only exact-matching clinic labels and treated `-99` as a pulse value. After correcting both problems, the clinic means are `r sprintf("%.3f", mean(records$pulse[records$site == "Clinic A"], na.rm=TRUE))` and `r sprintf("%.3f", mean(records$pulse[records$site == "Clinic B"], na.rm=TRUE))` beats/min, so the correct difference is **`r sprintf("%.3f", clinic_pulse_difference(records)["difference_b_minus_a"])` beats/min**. The original estimate is **`r sprintf("%.2f", 16.075 / clinic_pulse_difference(records)["difference_b_minus_a"])` times** larger.
+
+## Part 2: Project structure
+
+The script sets a seed, checks that clinic labels are valid, and reports the number of records changed and kept. It summarizes all three vital signs with one function. Run `Rscript scripts/01_analyze.R` from the repository root to recreate the results in `output/`.
