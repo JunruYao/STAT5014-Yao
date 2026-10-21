@@ -21,6 +21,3 @@ hw1/*.toc
 # Quarto render output for Homework 2
 hw2/hw2.html
 hw2/hw2_files/
-
-# Generated homework analysis results
-output/
