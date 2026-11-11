@@ -17,13 +17,13 @@ execute:
 
 Delavaux, C. S., Crowther, T. W., Bever, J. D., Weigelt, P., & Gora, E. M. (2024). Mutualisms weaken the latitudinal diversity gradient among oceanic islands. *Nature*, **627**, 335–339. <https://doi.org/10.1038/s41586-024-07110-y>.
 
-This reconstruction uses **Figure 4** ([original figure and caption](https://pmc.ncbi.nlm.nih.gov/articles/PMC10937366/figure/Fig4/)). It has three columns for pollination, mycorrhizal association, and nitrogen fixation. The upper panels (a, c, e) show mainland species richness, and the lower panels (b, d, f) show contributions to the island species deficit. Points show observations, lines show predictions, and shaded bands show standard errors.
+**Figure 4** ([original](https://pmc.ncbi.nlm.nih.gov/articles/PMC10937366/figure/Fig4/)) compares pollination, mycorrhizal association, and nitrogen fixation. The top row shows mainland species richness; the bottom row shows each group's contribution to the island species deficit. I reproduce its points, curves, and standard-error bands with simulated data.
 
 ## Part 1: Infer the data
 
 ### Variables and observations
 
-Each observation is indexed by absolute latitude, mutualism type, group, and response metric. Mainland species richness is a species count. Contribution to the island deficit is a group's missing species divided by the total missing species, rather than the fraction missing within that group.
+Species richness is a count. A group's contribution to the island deficit is its number of missing species divided by the total number missing across groups.
 
 | Variable | Type | Simulated values or plausible range |
 |---|---|---|
@@ -34,11 +34,11 @@ Each observation is indexed by absolute latitude, mutualism type, group, and res
 | `metric` | Categorical | Mainland richness or deficit contribution |
 | `value` | Discrete count or continuous proportion | Nonnegative species counts, usually below 10,000; or proportions from 0 to 1 |
 
-AM and EM mean arbuscular and ectomycorrhizal association; NM means non-mycorrhizal. The simulation includes 600 mainland locations and 212 island locations per group: seven groups, six panels, and 5,684 plotted observations. Sample sizes are specified for the simulation.
+AM, EM, and NM denote arbuscular mycorrhizal, ectomycorrhizal, and non-mycorrhizal plants. I simulate 600 mainland and 212 island locations per group, giving seven groups and 5,684 observations across six panels.
 
 ### Generating data from the figure
 
-For each group, reuse 600 mainland latitudes drawn uniformly from 0 to 70 degrees. For island contributions, reuse 204 latitudes drawn uniformly from 0 to 50 degrees and eight drawn uniformly from 50 to 70 degrees, reproducing the sparser observations at high latitudes. Specify approximate mean responses at every ten degrees using the tables below, then interpolate linearly between those values. The anchor values approximate the visual patterns in the published figure.
+Mainland latitudes follow U(0, 70). For islands, 204 latitudes follow U(0, 50) and eight follow U(50, 70), leaving fewer points at high latitudes. Locations are shared across groups. The tables give approximate mean values at ten-degree intervals; values between them are linearly interpolated.
 
 | Group | 0° | 10° | 20° | 30° | 40° | 50° | 60° | 70° |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -50,7 +50,7 @@ For each group, reuse 600 mainland latitudes drawn uniformly from 0 to 70 degree
 | N-fixing | 160 | 260 | 300 | 180 | 130 | 90 | 40 | 10 |
 | Non-N-fixing | 160 | 200 | 180 | 170 | 290 | 410 | 260 | 120 |
 
-For richness, add independent normal noise with standard deviation equal to 70% of the interpolated mean, round to whole species, and replace negative counts with zero. The changing noise level makes the scatter wider where richness is higher.
+For richness, add normal noise with SD equal to 70% of the interpolated mean, round, and replace negative counts with zero.
 
 | Group | 0° | 10° | 20° | 30° | 40° | 50° | 60° | 70° |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -62,13 +62,13 @@ For richness, add independent normal noise with standard deviation equal to 70% 
 | N-fixing | .50 | .58 | .60 | .53 | .33 | .16 | .07 | .04 |
 | Non-N-fixing | .50 | .42 | .40 | .47 | .67 | .84 | .93 | .96 |
 
-For contributions, add independent uniform noise between −0.04 and 0.04 to the interpolated values. Replace weights below 0.001 with 0.001, then divide by their sum within each location for pollination and N-fixation. The three displayed mycorrhizal groups are not a complete partition (the paper also considers orchid mycorrhizal plants), so their simulated contributions are not normalized.
+For contributions, add U(−0.04, 0.04) noise and set a minimum of 0.001. Normalize within each location for pollination and N-fixation. The three mycorrhizal groups are not normalized because they exclude orchid mycorrhizal plants.
 
-The assumed relationships are as follows: biotic and AM richness peak at low latitudes; the non-N-fixing richness curve has a later peak; biotic and AM deficit contributions decline toward high latitudes; and the two N-fixation contribution curves cross near the middle of the latitude range.
+Biotic and AM richness peak at low latitudes, while non-N-fixing richness peaks later. Biotic and AM deficit contributions decrease with latitude; the N-fixation curves cross near the middle of the range.
 
 ### Simplifications
 
-The data are simulated, with separate mainland and island latitude designs and shared locations across groups within each metric. Mutualism types are simulated independently, without enforcing equal richness totals across classifications. Contributions are generated directly rather than calculated from island inventories; only the complete two-group comparisons are normalized. Spatial dependence and environmental covariates are omitted. Local regression (`loess`) approximates the original fitted curves, with ribbons showing one standard error of the estimated mean.
+The numerical values are chosen by eye. I simulate mutualism types independently and generate deficit contributions directly, without reconstructing island inventories or matching richness totals across classifications. I omit spatial dependence and environmental covariates, and use `loess` instead of the paper's models.
 
 ## Part 2: Rebuild the figure
 
@@ -76,11 +76,11 @@ The data are simulated, with separate mainland and island latitude designs and s
 
 ```{r}
 #| label: simulate
-seed <- 5014L
+seed <- 5014
 set.seed(seed)
 library(ggplot2)
-n_mainland <- 600L
-n_island <- 212L
+n_mainland <- 600
+n_island <- 212
 knots <- seq(0, 70, 10)
 groups <- c("Biotic", "Abiotic", "AM", "EM", "NM", "N-fixing", "Non-N-fixing")
 types <- c("Pollination", "Pollination", rep("Mycorrhiza", 3), rep("N-fixation", 2))
@@ -99,31 +99,25 @@ latitude_island <- c(runif(n_island - 8, 0, 50), runif(8, 50, 70))
 dat <- data.frame()
 for (j in seq_along(groups)) {
   mu <- approx(knots, richness[j, ], xout = latitude_mainland)$y
-  weight <- approx(knots, shares[j, ], xout = latitude_island)$y
-  mainland <- data.frame(id = seq_len(n_mainland), latitude = latitude_mainland,
-                        type = types[j], group = groups[j], metric = "richness")
-  island <- data.frame(id = seq_len(n_island), latitude = latitude_island,
-                      type = types[j], group = groups[j], metric = "contribution")
-  dat <- rbind(dat,
-    transform(mainland, value = pmax(0, round(rnorm(n_mainland, mu, .7 * mu)))),
-    transform(island, value = pmax(.001, weight + runif(n_island, -.04, .04))))
+  share <- approx(knots, shares[j, ], xout = latitude_island)$y
+  value <- c(pmax(0, round(rnorm(n_mainland, mu, 0.7 * mu))),
+             pmax(0.001, share + runif(n_island, -0.04, 0.04)))
+  dat <- rbind(dat, data.frame(
+    id = c(seq_len(n_mainland), seq_len(n_island)),
+    latitude = c(latitude_mainland, latitude_island),
+    type = types[j], group = groups[j],
+    metric = rep(c("richness", "contribution"), c(n_mainland, n_island)), value))
 }
 i <- dat$metric == "contribution" & dat$type != "Mycorrhiza"
 dat$value[i] <- dat$value[i] / ave(dat$value[i], dat$id[i], dat$type[i], FUN = sum)
-panel_names <- c("a  Pollination\nMainland richness (species)",
-                 "c  Mycorrhiza\nMainland richness (species)",
-                 "e  N-fixation\nMainland richness (species)",
-                 "b  Pollination\nDeficit contribution (proportion)",
-                 "d  Mycorrhiza\nDeficit contribution (proportion)",
-                 "f  N-fixation\nDeficit contribution (proportion)")
-panel_id <- match(dat$type, unique(types)) + ifelse(dat$metric == "richness", 0, 3)
-dat$panel <- factor(panel_names[panel_id], levels = panel_names)
+dat$panel <- factor(match(dat$type, unique(types)) + 3 * (dat$metric == "contribution"))
 dat$group <- factor(dat$group, levels = groups)
+panels <- levels(dat$panel)
 ```
 
 ### Smooth curves and standard errors
 
-Separate local regressions are fitted for each group and response metric. Predictions are evaluated within the observed latitude range. Ribbon boundaries equal the fitted mean plus or minus its estimated standard error.
+I fit a local regression for each group and metric. The bands show the fitted mean ±1 standard error.
 
 ```{r}
 #| label: smooth-curves
@@ -140,13 +134,13 @@ for (g in groups) {
       upper = estimate$fit + estimate$se.fit))
   }
 }
-curves$panel <- factor(curves$panel, levels = panel_names)
+curves$panel <- factor(curves$panel, levels = panels)
 curves$group <- factor(curves$group, levels = groups)
 ```
 
 ### Reconstructed figure
 
-The six panels show simulated observations, fitted curves, and standard-error bands. Observations outside the displayed vertical ranges are retained in the fits.
+Points outside the plotted ranges are retained when fitting the curves.
 
 ```{r}
 #| label: fig-reconstruction
@@ -158,13 +152,14 @@ palette <- c(Biotic = "#CC79A7", Abiotic = "#8A8A8A", AM = "#3B5BA5",
 limits <- c(2000, 4000, 700, 1.25, 1.25, 1.25)
 legend_titles <- rep(c("Pollination syndrome", "Mycorrhizal type", "N-fixing type"), 2)
 plots <- list()
-for (k in seq_along(panel_names)) {
-  z <- subset(dat, panel == panel_names[k])
+for (k in seq_along(panels)) {
+  z <- subset(dat, panel == panels[k])
+  fit <- subset(curves, panel == panels[k])
   plots[[k]] <- ggplot(z, aes(latitude, value, color = group)) +
-    geom_ribbon(data = subset(curves, panel == panel_names[k]),
+    geom_ribbon(data = fit,
                 aes(ymin = lower, ymax = upper, fill = group), alpha = .5, color = NA) +
     geom_point(alpha = .24, size = .65) +
-    geom_line(data = subset(curves, panel == panel_names[k]), linewidth = .65) +
+    geom_line(data = fit, linewidth = .65) +
     coord_cartesian(xlim = c(0, 72), ylim = c(0, limits[k]), expand = FALSE) +
     scale_x_continuous(breaks = c(0, 20, 40, 60)) +
     scale_color_manual(values = palette) + scale_fill_manual(values = palette, guide = "none") +
@@ -184,12 +179,12 @@ p
 ```
 
 ::: {.figure-caption}
-**Figure.** Simulated reconstruction of the selected published figure using `r n_mainland` synthetic mainland locations and `r n_island` synthetic island locations per group, `r length(groups)` groups nested within `r length(unique(types))` mutualism types, and `r nrow(dat)` observations across `r nlevels(dat$panel)` panels. Circular points show simulated observations; solid curves are local regression fits; ribbons extend `r 1L` standard error above and below the fitted mean. Seed: `r seed`.
+**Figure.** Simulated data for `r n_mainland` mainland and `r n_island` island locations per group: `r nrow(dat)` observations, `r length(groups)` groups, and `r nlevels(dat$panel)` panels. Lines are local regression fits; bands show ±`r 1` standard error. Seed: `r seed`.
 :::
 
 ### Colorblindness check
 
-The palette was assessed using full-severity simulations of protanopia, deuteranopia, and tritanopia. Colors distinguish groups within each mutualism type.
+Colors remain distinguishable within each panel under the three simulated forms of color vision deficiency below.
 
 ```{r}
 #| label: fig-palette-check
