@@ -76,8 +76,7 @@ The numerical values are chosen by eye. I simulate mutualism types independently
 
 ```{r}
 #| label: simulate
-seed <- 5014
-set.seed(seed)
+set.seed(5014)
 library(ggplot2)
 n_mainland <- 600
 n_island <- 212
@@ -99,14 +98,14 @@ latitude_island <- c(runif(n_island - 8, 0, 50), runif(8, 50, 70))
 dat <- data.frame()
 for (j in seq_along(groups)) {
   mu <- approx(knots, richness[j, ], xout = latitude_mainland)$y
-  share <- approx(knots, shares[j, ], xout = latitude_island)$y
-  value <- c(pmax(0, round(rnorm(n_mainland, mu, 0.7 * mu))),
-             pmax(0.001, share + runif(n_island, -0.04, 0.04)))
   dat <- rbind(dat, data.frame(
     id = c(seq_len(n_mainland), seq_len(n_island)),
     latitude = c(latitude_mainland, latitude_island),
     type = types[j], group = groups[j],
-    metric = rep(c("richness", "contribution"), c(n_mainland, n_island)), value))
+    metric = rep(c("richness", "contribution"), c(n_mainland, n_island)),
+    value = c(pmax(0, round(rnorm(n_mainland, mu, 0.7 * mu))),
+              pmax(0.001, approx(knots, shares[j, ], xout = latitude_island)$y +
+                     runif(n_island, -0.04, 0.04)))))
 }
 i <- dat$metric == "contribution" & dat$type != "Mycorrhiza"
 dat$value[i] <- dat$value[i] / ave(dat$value[i], dat$id[i], dat$type[i], FUN = sum)
@@ -153,9 +152,8 @@ limits <- c(2000, 4000, 700, 1.25, 1.25, 1.25)
 legend_titles <- rep(c("Pollination syndrome", "Mycorrhizal type", "N-fixing type"), 2)
 plots <- list()
 for (k in seq_along(panels)) {
-  z <- subset(dat, panel == panels[k])
   fit <- subset(curves, panel == panels[k])
-  plots[[k]] <- ggplot(z, aes(latitude, value, color = group)) +
+  plots[[k]] <- ggplot(subset(dat, panel == panels[k]), aes(latitude, value, color = group)) +
     geom_ribbon(data = fit,
                 aes(ymin = lower, ymax = upper, fill = group), alpha = .5, color = NA) +
     geom_point(alpha = .24, size = .65) +
@@ -179,7 +177,7 @@ p
 ```
 
 ::: {.figure-caption}
-**Figure.** Simulated data for `r n_mainland` mainland and `r n_island` island locations per group: `r nrow(dat)` observations, `r length(groups)` groups, and `r nlevels(dat$panel)` panels. Lines are local regression fits; bands show ±`r 1` standard error. Seed: `r seed`.
+**Figure.** Simulated data for `r n_mainland` mainland and `r n_island` island locations per group: `r nrow(dat)` observations, `r length(groups)` groups, and `r nlevels(dat$panel)` panels. Lines are local regression fits; bands show ±`r 1` standard error.
 :::
 
 ### Colorblindness check
