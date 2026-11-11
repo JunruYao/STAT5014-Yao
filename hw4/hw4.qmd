@@ -6,7 +6,6 @@ format:
     toc: true
     toc-depth: 2
     embed-resources: true
-    html-math-method: mathml
 execute:
   echo: true
   warning: false
@@ -16,157 +15,141 @@ execute:
 
 ## Paper and figure
 
-Reck, M., Rodríguez-Abreu, D., Robinson, A. G., et al. (2021). Five-Year Outcomes With Pembrolizumab Versus Chemotherapy for Metastatic Non–Small-Cell Lung Cancer With PD-L1 Tumor Proportion Score ≥ 50%. *Journal of Clinical Oncology*, **39**(21), 2339–2349. <https://doi.org/10.1200/JCO.21.00174>.
+Delavaux, C. S., Crowther, T. W., Bever, J. D., Weigelt, P., & Gora, E. M. (2024). Mutualisms weaken the latitudinal diversity gradient among oceanic islands. *Nature*, **627**, 335–339. <https://doi.org/10.1038/s41586-024-07110-y>.
 
-I reconstruct **Figure 2**, available in the [open-access paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC8280089/#F2). It shows Kaplan–Meier curves for overall survival (OS; panel A) and progression-free survival (PFS; panel B). This figure interests me because the same treatment comparison can look different depending on the endpoint.
+I reconstruct **Figure 4** ([original figure](https://www.nature.com/articles/s41586-024-07110-y/figures/4)). Its six panels compare pollination, mycorrhizal association, and nitrogen fixation. The upper panels show mainland species richness; the lower panels show each group's contribution to the island species deficit. Points show observations, lines show model predictions, and shaded bands show standard errors.
 
-The figure meets four assignment criteria: **facets** determined by endpoint; **multiple layers** consisting of step curves and censoring ticks; **treatment mapped to color**; and **a computed quantity**, the Kaplan–Meier survival estimate. Both axes use ordinary linear scales.
+The figure meets four criteria: **facets**, **multiple layers**, **group mapped to color**, and **computed quantities** (fitted values and uncertainty bands). I preserve the six-panel structure using simple simulated data and quadratic regression.
 
 ## Part 1: Infer the data
 
 ### Variables and structure
 
-The underlying data need one patient identifier, a treatment group, and an observed time and event indicator for each endpoint. The published trial has 305 patients: 154 assigned to pembrolizumab and 151 to chemotherapy. Both endpoints refer to the same patients, not separate samples.
+Species richness counts species in a mainland flora. A group's contribution to the island deficit is its missing species divided by the total missing species; this differs from the fraction of that group's own species that is missing.
 
-| Variable | Type | Meaning and plausible values |
+| Variable | Type | Values in my simulation |
 |---|---|---|
-| `id` | Identifier | Unique integers from 1 to 305 |
-| `treatment` | Categorical | Pembrolizumab or Chemotherapy |
-| `endpoint` | Categorical | Overall survival or Progression-free survival |
-| `time` | Continuous | Months from randomization to an event or censoring; positive and approximately below 69 |
-| `status` | Binary categorical | 1 for an observed endpoint event; 0 for right censoring |
+| `id` | Identifier | 90 synthetic comparison locations |
+| `latitude` | Continuous | Absolute latitude, uniform from 0 to 70 degrees |
+| `type` | Categorical | Pollination, Mycorrhiza, N-fixation |
+| `group` | Categorical | Biotic/Abiotic; AM/EM/NM; N-fixing/Non-N-fixing |
+| `metric` | Categorical | Species richness or deficit contribution |
+| `value` | Numeric | Positive integer species counts, or a dimensionless proportion from 0 to 1 |
 
-For OS, the event is death. For PFS, it is progression or death, whichever occurs first. A censored observation records how long the patient was observed without that endpoint event; it does not imply that the event happened at that time. For plotting, I reshape the patient data into 610 patient–endpoint records.
+AM and EM denote arbuscular and ectomycorrhizal association; NM denotes non-mycorrhizal plants. Each synthetic location contributes both metrics for every group, giving 1,260 plotted observations. These counts are simulation choices, not the paper's sample sizes.
 
-### Relationships and a reproducible generative model
+### Generative description
 
-Both curves should start at 100%, decline in steps, and generally remain higher for pembrolizumab. PFS should decline earlier than OS. The paper reports median OS of 26.3 and 13.4 months and median PFS of 7.7 and 5.5 months for pembrolizumab and chemotherapy, respectively. I use these as population targets, without forcing the simulated sample medians to equal them.
+Draw 90 latitudes uniformly between 0 and 70 degrees. For each group, let mean richness be `a + b * latitude + c * latitude^2`. Add independent normal noise with standard deviation equal to one quarter of this mean, round to an integer, and replace values below one with one. Counts will generally range from a few species to several thousand.
 
-I generate independent patients using the following model, with treatment-specific parameters listed in pembrolizumab/chemotherapy order:
+For deficit contributions, start with `p0 + p1 * latitude`, add uniform noise between −0.06 and 0.06, and replace weights below 0.005 with 0.005. Within each location and mutualism type, divide each weight by their sum, so the group contributions sum to one. The parameters are:
 
-1. Draw death time $D$ from a Weibull distribution with shape $k_D=0.70/0.78$ and scale $b_D=m_D/(\log 2)^{1/k_D}$, where $m_D=26.3/13.4$ months.
-2. Independently draw progression time $G$ from a Weibull distribution with shape $k_G=0.48/0.90$. Choose its scale as $b_G=m_P/[\log 2-(m_P/b_D)^{k_D}]^{1/k_G}$, where $m_P=7.7/5.5$ months. Thus $P(\min(D,G)>m_P)=0.5$.
-3. Draw administrative follow-up $C_A\sim U(55,69)$ months. Independently, with probability 0.10, generate earlier loss to follow-up $C_L\sim U(6,48)$; otherwise set $C_L=\infty$. Let $C=\min(C_A,C_L)$.
-4. Record OS time $\min(D,C)$ and status $I(D\leq C)$, and PFS time $\min(D,G,C)$ and status $I(\min(D,G)\leq C)$.
+| Type | Group | a | b | c | p0 | p1 |
+|---|---|---:|---:|---:|---:|---:|
+| Pollination | Biotic | 6000 | −55 | −0.20 | 0.96 | −0.0055 |
+| Pollination | Abiotic | 300 | 10 | −0.08 | 0.04 | 0.0055 |
+| Mycorrhiza | AM | 5000 | −45 | −0.15 | 0.86 | −0.0040 |
+| Mycorrhiza | EM | 150 | 15 | −0.13 | 0.02 | 0.0012 |
+| Mycorrhiza | NM | 600 | 6 | −0.03 | 0.12 | 0.0028 |
+| N-fixation | N-fixing | 600 | −8 | 0.025 | 0.74 | −0.0080 |
+| N-fixation | Non-N-fixing | 5000 | 100 | −2.00 | 0.26 | 0.0080 |
+
+These settings make biotically pollinated and AM plants dominate at low latitudes, with their contributions decreasing at higher latitudes. The N-fixing contribution also declines and eventually falls below the non-N-fixing contribution.
 
 ### Simplifications
 
-The Weibull shapes and censoring mechanism are my assumptions, not estimates from individual trial data. I ignore covariates, treatment crossover, assessment schedules, and the original endpoint-specific censoring rules. Progression and death are independent conditional on treatment, but the endpoints remain related through the shared death and censoring times, ensuring PFS never exceeds OS. I omit the original risk tables, reference guides, and numerical annotations while preserving both panels, curves, and censoring marks. These simulated data illustrate the graphic and cannot support clinical conclusions.
+I reuse the same synthetic latitude design for both metrics rather than modelling separate mainland and island samples. Contributions are generated directly, without reconstructing island inventories. Noise is independent across metrics and mutualism types; spatial correlation and environmental covariates are omitted. All parameters are chosen to resemble broad patterns. Quadratic regressions replace the original models. For convenience, I use the confidence bands supplied by `geom_smooth()` instead of reproducing the original one-standard-error bands; these bands describe uncertainty in the fitted mean, not individual observations.
 
 ## Part 2: Rebuild the figure
 
-### Seeded simulation
+### Simulate the data
 
-Only `ggplot2`, `survival`, and `colorspace` are needed in addition to Quarto's R dependencies. All data are generated below; no downloaded data or saved R workspace is required.
+The code uses basic arithmetic and normal and uniform random numbers. It requires `ggplot2` and `colorspace`, in addition to Quarto's R dependencies; no external data are needed.
 
 ```{r}
 #| label: simulate
 seed <- 5014L
 set.seed(seed)
 library(ggplot2)
-library(survival)
-
-groups <- c("Pembrolizumab", "Chemotherapy")
-sizes <- c(154L, 151L)
-patients <- data.frame(id = seq_len(sum(sizes)),
-                       treatment = factor(rep(groups, sizes), levels = groups))
-g <- as.integer(patients$treatment)
-n <- nrow(patients)
-death_shape <- c(0.70, 0.78)[g]
-death_scale <- c(26.3, 13.4)[g] / log(2)^(1 / death_shape)
-pfs_median <- c(7.7, 5.5)[g]
-progression_shape <- c(0.48, 0.90)[g]
-progression_scale <- pfs_median /
-  (log(2) - (pfs_median / death_scale)^death_shape)^(1 / progression_shape)
-death <- rweibull(n, death_shape, death_scale)
-progression <- rweibull(n, progression_shape, progression_scale)
-administrative <- runif(n, 55, 69)
-dropout <- ifelse(runif(n) < 0.10, runif(n, 6, 48), Inf)
-censor <- pmin(administrative, dropout)
-endpoints <- c("A. Overall survival", "B. Progression-free survival")
-dat <- rbind(
-  transform(patients, endpoint = endpoints[1], time = pmin(death, censor),
-            status = as.integer(death <= censor)),
-  transform(patients, endpoint = endpoints[2],
-            time = pmin(death, progression, censor),
-            status = as.integer(pmin(death, progression) <= censor))
+n <- 90L
+confidence <- 0.95
+parameters <- data.frame(
+  type = c(rep("Pollination", 2), rep("Mycorrhiza", 3), rep("N-fixation", 2)),
+  group = c("Biotic", "Abiotic", "AM", "EM", "NM", "N-fixing", "Non-N-fixing"),
+  a = c(6000, 300, 5000, 150, 600, 600, 5000),
+  b = c(-55, 10, -45, 15, 6, -8, 100),
+  c = c(-0.20, -0.08, -0.15, -0.13, -0.03, 0.025, -2),
+  p0 = c(0.96, 0.04, 0.86, 0.02, 0.12, 0.74, 0.26),
+  p1 = c(-0.0055, 0.0055, -0.004, 0.0012, 0.0028, -0.008, 0.008)
 )
-dat$endpoint <- factor(dat$endpoint, levels = endpoints)
-```
-
-### Compute the survival estimates
-
-At each event time, the Kaplan–Meier estimator multiplies the previous survival probability by the proportion of patients at risk who survive that time. Censoring reduces later risk sets without causing a downward step. The tick marks are placed at the estimated survival probability at each censoring time.
-
-```{r}
-#| label: estimate
-km <- do.call(rbind, lapply(endpoints, function(e) {
-  fit <- survfit(Surv(time, status) ~ treatment,
-                 data = dat[dat$endpoint == e, ])
-  s <- summary(fit, censored = TRUE)
-  data.frame(endpoint = e, treatment = sub("^treatment=", "", s$strata),
-             time = s$time, survival = s$surv, n_censor = s$n.censor)
-}))
-starts <- expand.grid(endpoint = endpoints, treatment = groups)
-starts$time <- 0
-starts$survival <- 1
-starts$n_censor <- 0
-km <- rbind(starts, km)
-km$endpoint <- factor(km$endpoint, levels = endpoints)
-km$treatment <- factor(km$treatment, levels = groups)
-km <- km[order(km$endpoint, km$treatment, km$time), ]
+locations <- data.frame(id = seq_len(n), latitude = runif(n, 0, 70))
+d <- merge(locations, parameters, by = NULL)
+mu <- with(d, a + b * latitude + c * latitude^2)
+d$richness <- pmax(1, round(rnorm(nrow(d), mu, 0.25 * mu)))
+weight <- with(d, p0 + p1 * latitude) + runif(nrow(d), -0.06, 0.06)
+weight <- pmax(0.005, weight)
+d$contribution <- weight / ave(weight, d$id, d$type, FUN = sum)
+metrics <- c("Species richness (species)", "Deficit contribution (proportion)")
+dat <- rbind(transform(d, metric = metrics[1], value = richness),
+             transform(d, metric = metrics[2], value = contribution))
+dat$type <- factor(dat$type, levels = unique(parameters$type))
+dat$metric <- factor(dat$metric, levels = metrics)
+dat$group <- factor(dat$group, levels = parameters$group)
 ```
 
 ### Reconstructed figure
 
-The plotting block has approximately twenty lines. Blue and orange replace the original blue and red. I also map treatment to linetype so the groups remain identifiable without color.
+Each curve is a simple quadratic regression: an intercept, latitude, and squared latitude. `geom_smooth()` fits the curves and draws their confidence bands automatically. Faceting repeats the same points, lines, and ribbons across all panels. The row labels state the response units.
 
 ```{r}
 #| label: fig-reconstruction
-#| fig-width: 7.5
-#| fig-height: 8
-palette <- c(Pembrolizumab = "#0072B2", Chemotherapy = "#D55E00")
-line_types <- c(Pembrolizumab = "solid", Chemotherapy = "longdash")
-p <- ggplot(km, aes(x = time, y = 100 * survival,
-                    color = treatment, linetype = treatment)) +
-  geom_step(direction = "hv", linewidth = 0.8) +
-  geom_point(data = subset(km, n_censor > 0),
-             shape = 124, size = 2.5, show.legend = FALSE) +
-  facet_wrap(vars(endpoint), ncol = 1) +
+#| fig-width: 11
+#| fig-height: 7
+palette <- c(Biotic = "#0072B2", Abiotic = "#D55E00", AM = "#0072B2",
+             EM = "#D55E00", NM = "#666666", "N-fixing" = "#0072B2",
+             "Non-N-fixing" = "#D55E00")
+p <- ggplot(dat, aes(latitude, value, color = group)) +
+  geom_point(aes(shape = group), alpha = 0.28, size = 1.1, stroke = 0.3) +
+  geom_smooth(aes(fill = group, linetype = group), method = "lm",
+              formula = y ~ x + I(x^2), level = confidence,
+              linewidth = 0.85, alpha = 0.18) +
+  facet_grid(metric ~ type, scales = "free_y", switch = "y") +
   scale_color_manual(values = palette) +
-  scale_linetype_manual(values = line_types) +
-  scale_x_continuous(breaks = seq(0, 72, 12),
-                     expand = expansion(mult = c(0, 0.01))) +
-  scale_y_continuous(breaks = seq(0, 100, 25), limits = c(0, 100)) +
-  coord_cartesian(xlim = c(0, 72)) +
-  labs(x = "Time since randomization (months)",
-       y = "Survival probability (%)", color = NULL, linetype = NULL) +
-  theme_classic(base_size = 12) +
-  theme(legend.position = "top", strip.background = element_blank(),
-        strip.text = element_text(face = "bold", hjust = 0),
-        panel.spacing = grid::unit(1.1, "lines"))
+  scale_fill_manual(values = palette, guide = "none") +
+  scale_shape_manual(values = c(16, 17, 16, 17, 15, 16, 17)) +
+  scale_linetype_manual(values = c("solid", "dashed", "solid", "dashed",
+                                  "dotdash", "solid", "dashed")) +
+  scale_x_continuous(breaks = seq(0, 70, 20), expand = expansion(mult = 0.03)) +
+  labs(x = "Absolute latitude (degrees)", y = NULL,
+       color = "Plant group", shape = "Plant group", linetype = "Plant group") +
+  theme_minimal(base_size = 11) +
+  theme(panel.grid.minor = element_blank(), legend.position = "bottom",
+        strip.text = element_text(face = "bold"), strip.placement = "outside",
+        panel.spacing = grid::unit(1.1, "lines")) +
+  guides(color = guide_legend(nrow = 1, override.aes = list(alpha = 1, fill = NA)))
 p
 ```
 
 ::: {.figure-caption}
-**Figure.** Simulated reconstruction of the selected published figure using `r nrow(patients)` patients (`r sizes[1]` assigned to pembrolizumab and `r sizes[2]` to chemotherapy), shown across `r length(endpoints)` endpoint panels. The same patients contribute to both panels. Step curves are Kaplan–Meier estimates, and vertical ticks mark censoring. Simulation seed: `r seed`. These are simulated outcomes, not the trial's patient data.
+**Figure.** Simulated reconstruction of the selected published figure, with `r n` comparison locations, `r nrow(parameters)` groups nested within `r nlevels(dat$type)` mutualism types, and `r nrow(dat)` observations across `r nlevels(dat$metric) * nlevels(dat$type)` panels. Points are simulated observations; lines are quadratic regression fits; ribbons are `r 100 * confidence`% confidence intervals for the fitted mean (the original uses standard-error bands). Seed: `r seed`. Both metrics share a synthetic latitude design; these are not the paper's observations.
 :::
 
 ### Colorblindness check
 
-The following check simulates full-severity protanopia, deuteranopia, and tritanopia for the chosen palette. The resulting swatches remain distinguishable; solid and dashed lines provide an additional cue, including in grayscale.
+Blue and vermilion distinguish each two-group comparison, with gray added for the third mycorrhizal group. Colors repeat only across separate mutualism columns. Shapes and line patterns provide additional cues. The following swatches simulate three types of color vision deficiency at full severity.
 
 ```{r}
 #| label: fig-palette-check
-#| fig-width: 7.5
-#| fig-height: 2.3
-vision <- list("Original" = identity, "Protanopia" = colorspace::protan,
-               "Deuteranopia" = colorspace::deutan, "Tritanopia" = colorspace::tritan)
+#| fig-width: 7
+#| fig-height: 2.1
+colors <- c("#0072B2", "#D55E00", "#666666")
+vision <- list(Original = identity, Protanopia = colorspace::protan,
+               Deuteranopia = colorspace::deutan, Tritanopia = colorspace::tritan)
 op <- par(mar = c(1, 9, 1, 1))
 plot.new()
-plot.window(xlim = c(0, 2), ylim = c(0, 4))
+plot.window(xlim = c(0, 3), ylim = c(0, 4))
 for (i in seq_along(vision)) {
-  rect(0:1, 4 - i, 1:2, 4.8 - i, col = vision[[i]](unname(palette)), border = NA)
+  rect(0:2, 4 - i, 1:3, 4.8 - i, col = vision[[i]](colors), border = NA)
   text(0, 4.4 - i, names(vision)[i], pos = 2, xpd = NA)
 }
 par(op)
@@ -174,4 +157,4 @@ par(op)
 
 ## One improvement to the original
 
-The original figure could use distinct line patterns for the treatment groups so readers can distinguish them without relying on color.
+The original figure could add distinct point shapes and line patterns so its groups remain identifiable without color.
