@@ -166,7 +166,7 @@ for (k in seq_along(panel_names)) {
   z <- subset(dat, panel == panel_names[k])
   plots[[k]] <- ggplot(z, aes(latitude, value, color = group)) +
     geom_ribbon(data = subset(curves, panel == panel_names[k]),
-                aes(ymin = lower, ymax = upper, fill = group), alpha = .3, color = NA) +
+                aes(ymin = lower, ymax = upper, fill = group), alpha = .5, color = NA) +
     geom_point(alpha = .24, size = .65) +
     geom_line(data = subset(curves, panel == panel_names[k]), linewidth = .65) +
     coord_cartesian(xlim = c(0, 72), ylim = c(0, limits[k]), expand = FALSE) +
