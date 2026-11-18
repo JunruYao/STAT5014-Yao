@@ -1,0 +1,113 @@
+---
+title: "STAT 5014 — Homework 5: Reproduce the Benchmark"
+author: "Junru Yao"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    embed-resources: true
+engine: knitr
+execute:
+  echo: false
+---
+
+**Machine.** Apple M4 Pro, **14 physical CPU cores** (10 performance and 4 efficiency), 48 GB RAM, macOS arm64. R used 14 forked workers and Python used a 14-process pool. Julia 1.13.4 reported **`nthreads() = 14`**. The other runtimes were R 4.4.2 and Python 3.13.2 with NumPy 2.2.5.
+
+Each entry is the minimum wall-clock time over **five runs** of that method. Speedup is the serial minimum divided by the corresponding parallel or vectorized minimum. Each method produced a complete result, which was checked against its serial counterpart outside the timed interval. R's `mclapply()` timings include forking and collecting results. The Python pool was started before timing and reused, with task dispatch, result transfer and assembly included. Julia was warmed up before timing to exclude first-call compilation.
+
+```{r}
+times <- read.csv("benchmark-results.csv")
+minima <- aggregate(seconds ~ workload + language + method, times, min)
+languages <- c("R", "Python", "Julia")
+
+minimum <- function(workload_id, language_id, method_id) {
+  selected <- minima$workload == workload_id &
+    minima$language %in% language_id & minima$method == method_id
+  minima$seconds[selected][match(language_id, minima$language[selected])]
+}
+
+serial_parallel <- function(workload, labels, languages) {
+  serial <- minimum(workload, languages, "serial")
+  parallel <- minimum(workload, languages, "parallel")
+  data.frame(Method = labels, Serial = serial, Parallel = parallel, Speedup = serial / parallel)
+}
+
+replicates <- serial_parallel("replicate", c("R, fork", "Python, processes", "Julia, threads"), languages)
+square_roots <- serial_parallel("sqrt", replicates$Method, languages)
+square_roots$Vectorized <- minimum("sqrt", languages, "vectorized")
+square_roots$Vectorized_speedup <- square_roots$Serial / square_roots$Vectorized
+exponentials <- serial_parallel("exp", "Python", "Python")
+
+show_table <- function(results, caption) {
+  numeric_columns <- vapply(results, is.numeric, logical(1))
+  results[numeric_columns] <- lapply(names(results)[numeric_columns], function(column) {
+    if (grepl("speedup", column, ignore.case = TRUE)) {
+      sprintf("%.2f×", results[[column]])
+    } else {
+      sprintf("%.6f", results[[column]])
+    }
+  })
+  names(results)[names(results) == "Vectorized_speedup"] <- "Vectorized speedup"
+  knitr::kable(results, align = c("l", rep("r", sum(numeric_columns))), caption = caption)
+}
+```
+
+## Part 1. Benchmark results
+
+### 1. Sixteen independent replicates
+
+For each seed from 1 to 16, I generated 20,000 standard normal draws, initialized `theta` to zero, and performed all 2,000 updates `theta += sum(y - theta) / length(y)`. Each language used its own seeded random-number generator, so the normal samples differ across languages. Serial and parallel runs within a language used the same seeds and agreed.
+
+```{r}
+show_table(replicates, "Sixteen independent replicates. Times in seconds.")
+```
+
+### 2. One million square roots
+
+Both scalar methods call `sqrt` once for each integer from 1 to 1,000,000. R used `lapply()` and `mclapply()`. Python used built-in `map` and process-pool `map` with batches of scalar calls. Julia used the same indexed loop with and without `@threads`. The last two columns report the vectorized expression and its speedup relative to the serial scalar method. Input setup was outside the timed region.
+
+```{r}
+show_table(square_roots, "One million square roots. Times in seconds.")
+```
+
+### 3. Twenty million exponentials
+
+Both Python methods used NumPy `exp` on the same seeded array of 20 million standard normal values. One call handled the entire array in the serial case. The process pool received 14 array chunks, and the main process concatenated their returned results in input order. Input generation and the creation of chunk views were outside the timer.
+
+```{r}
+show_table(exponentials, "Twenty million exponentials in Python. Times in seconds.")
+```
+
+## Part 2. Comparison with Lecture 11
+
+### 1. Sixteen independent replicates
+
+**Should it differ?** Yes, in the size of the speedups. Each replicate performs enough work to make distributing just 16 integer seeds worthwhile. My machine has four more cores than the lecture's, but the performance and efficiency cores have different throughputs. Array allocation, memory bandwidth, and the way the 16 replicates are distributed across workers can also affect the gains.
+
+**Did it?** All three languages sped up, as in the lecture, but by different amounts. R gained `r sprintf("%.2f×", replicates$Speedup[1])` versus 4.18× in the lecture, and Python gained `r sprintf("%.2f×", replicates$Speedup[2])` versus 4.89×. Julia gained `r sprintf("%.2f×", replicates$Speedup[3])` versus 5.62×.
+
+### 2. One million square roots
+
+**Should it differ?** The exact ratios can differ because a scalar square root takes very little time. R and Python have to distribute many scalar calls and bring their outputs back. Whether that pays off depends on batching, transfer costs, and the overhead of the serial loop. Julia threads can write to separate indices of a shared output array with no interprocess transfer.
+
+**Did it?** R was the exception to the lecture's pattern. Its forked run was `r sprintf("%.2f×", square_roots$Speedup[1])` as fast as its serial run, versus 0.44× in the lecture. Here, `mclapply()` preschedules groups of calls across workers, and that parallel work outweighed the cost of collecting their results. The lecture does not detail its batching for this workload, so these timings alone cannot identify the cause of the difference. Python slowed to `r sprintf("%.2f×", square_roots$Speedup[2])` versus the lecture's near tie at 1.02×. Julia sped up by `r sprintf("%.2f×", square_roots$Speedup[3])` versus 4.52×. Vectorization was fastest in R and Python, and the threaded loop was fastest in Julia.
+
+### 3. Twenty million exponentials
+
+**Should it differ?** Yes, in the size of the slowdown. NumPy already executes a single large `exp` efficiently. The process pool sends chunks of an approximately 160 MB input array, receives about 160 MB of results, and assembles another full output array. More processes can reduce computation time on the chunks, while transferring and assembling the arrays still takes time.
+
+**Did it?** The process-based run took `r sprintf("%.2f×", exponentials$Parallel / exponentials$Serial)` as long as serial NumPy here, compared with about 2.80× in the lecture. The direction agreed, but the slowdown on this machine was smaller.
+
+## Reproduce the run
+
+From the directory containing the three scripts, run the following commands in order. Python requires NumPy. The R fork benchmark requires macOS or Linux. The arguments are workers and repetitions for R and Python, and repetitions for Julia. Julia's thread count is set separately at launch. Use your machine's CPU count to choose the number of workers and threads.
+
+```bash
+Rscript --vanilla benchmark.R 14 5
+python3 benchmark.py 14 5
+julia --startup-file=no --threads=14,0 benchmark.jl 5
+```
+
+Each script prints its raw timings as CSV. This report reads the saved measurements from `benchmark-results.csv` and can be rendered with `quarto render hw5.qmd` (R and knitr required).
+
+Benchmark design and comparison figures come from [STAT 5014 Lecture 11, “Three Workloads, Three Different Answers”](https://github.com/michaelschwob/STAT5014/blob/main/notes/lecture-11/11_parallel_computing.qmd).
